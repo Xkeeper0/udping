@@ -6,7 +6,7 @@ local socket	= require "socket"
 
 local address	= "mini.xkeeper.net"
 local port		= "37800"
-local rate		= 1/60
+local rate		= 6/60
 
 local oldTimer	= 0
 local timer		= 0
@@ -27,7 +27,7 @@ function love.load()
 	udp			= socket.udp()
 	udp:settimeout(0)
 	udp:setpeername(address, port)
-	
+
 end
 
 
@@ -106,7 +106,7 @@ function doGraph(st, max, step)
 	for i = st, max, step do
 		love.graphics.setColor(pingToColor(i))
 		love.graphics.rectangle("fill", 1100, gY, 10, 1)
-		
+
 		if nP % 20 == 0 then
 			love.graphics.setColor(1, 1, 1)
 			love.graphics.print(string.format("-- %.3fs", i), 1105, gY - 7)

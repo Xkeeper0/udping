@@ -12,7 +12,7 @@ local rate		= ch:demand()
 udp:setpeername(address, port)
 print(address, port)
 
-local startT	= love.timer.getTime()
+local startT	= love.timer.getTime() - rate
 local num		= 0;
 
 while true do
@@ -33,5 +33,10 @@ while true do
 			ch:push({m, tT, true})
 		end
 	until not data
+
+	local sleepT	= rate - (tT - startT)
+	if sleepT > 0 then
+		socket.select({ udp }, nil, sleepT)
+	end
 
 end
