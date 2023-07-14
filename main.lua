@@ -5,6 +5,7 @@
 local socket	= require "socket"
 
 local address	= "mini.xkeeper.net"
+--local address	= "192.168.1.148"
 local port		= "37800"
 local rate		= 1/60
 
@@ -15,7 +16,9 @@ local packetT	= {}
 local packetC	= {}
 local packetH	= 120 * 90 * 1
 
-local sounds	= { bips = {}, farts = {} }
+local droning	= false		-- constant droning based on latency
+local fartMode	= "farts"	-- farts, neco, nil
+local sounds	= { bips = {}, farts = {}, neco = {} }
 local soundC	= 0
 local soundD	= math.ceil(1 / rate) * 2
 local soundFD	= math.max(5, math.ceil(soundD * 0.3))
@@ -27,6 +30,23 @@ local lastPingDrawn	= false
 local consecutiveFarts = 0
 local font		= nil
 
+local messageTime = 10
+local message = [[
+*** udping network monitor ***
+* github.com/xkeeper0/udping *
+*        version  1.0        *
+******************************
+
+lost packet soundset:
+- [1] farts (classic)   -
+- [2] neco-arc (suffer) -
+- [3] muted             -
+
+- [d] toggle droning    -
+
+[ any key to dismiss ]
+]]
+
 function love.load()
 	font			= love.graphics.newFont("XFont.ttf", 16, "mono");
 
@@ -36,7 +56,9 @@ function love.load()
 	sounds.bips[2]:setLooping(true)
 	sounds.bips[1]:setVolume(0.20)
 	sounds.bips[2]:setVolume(0.20)
-
+	
+	-- the 0 index here is special: superfart 
+	sounds.farts[0]	= love.audio.newSource("sfx/superfart.ogg", "static")
 	sounds.farts[1]	= love.audio.newSource("sfx/fart1.ogg", "static")
 	sounds.farts[2]	= love.audio.newSource("sfx/fart2.ogg", "static")
 	sounds.farts[3]	= love.audio.newSource("sfx/fart3.ogg", "static")
@@ -45,10 +67,25 @@ function love.load()
 	sounds.farts[6]	= love.audio.newSource("sfx/fart6.ogg", "static")
 	sounds.farts[7]	= love.audio.newSource("sfx/poo2.ogg", "static")
 	sounds.farts[8]	= love.audio.newSource("sfx/poo2_robot.ogg", "static")
-	sounds.farts[9]	= love.audio.newSource("sfx/superfart.ogg", "static")
+
+	sounds.neco[0]	= love.audio.newSource("sfx/neco/neco74.wav", "static")
+	sounds.neco[1]	= love.audio.newSource("sfx/neco/Neco_B0AA06.wav", "static")
+	sounds.neco[2]	= love.audio.newSource("sfx/neco/Neco_B0AA18.wav", "static")
+	sounds.neco[3]	= love.audio.newSource("sfx/neco/Neco_B0AA19.wav", "static")
+	sounds.neco[4]	= love.audio.newSource("sfx/neco/Neco_B0AA43.wav", "static")
+	sounds.neco[5]	= love.audio.newSource("sfx/neco/Neco_B0AA57.wav", "static")
+	sounds.neco[6]	= love.audio.newSource("sfx/neco/Neco_B0AA58.wav", "static")
+	sounds.neco[7]	= love.audio.newSource("sfx/neco/Neco_B2AA005.wav", "static")
+	sounds.neco[8]	= love.audio.newSource("sfx/neco/neco14.wav", "static")
+	sounds.neco[9]	= love.audio.newSource("sfx/neco/neco15.wav", "static")
+
 
 	for i = 1, 8 do
 		sounds.farts[i]:setVolume(0.7)
+	end
+
+	for i = 1, 9 do
+		sounds.neco[i]:setVolume(0.7)
 	end
 
 	thr			= love.thread.newThread("thread.lua")
@@ -66,6 +103,43 @@ function love.load()
 end
 
 
+function doFart()
+	if not fartMode then return end
+
+	local maxS = (fartMode == "farts" and 8 or 9) -- 8 fart sounds, 9 neco sounds
+
+	local fart = math.random(1, maxS)
+	while fart == lastFart do
+		fart = math.random(1, maxS)
+	end
+	sounds[fartMode][fart]:stop()
+	sounds[fartMode][fart]:setPitch(math.random(60, 130) / 100)
+	sounds[fartMode][fart]:play()
+
+end
+
+function doSuperFart()
+	if not fartMode then return end
+
+	
+	if fartMode == "farts" then
+		-- random pitch variation
+		sounds[fartMode][0]:stop()
+		sounds[fartMode][0]:setPitch(math.random(45, 100) / 100)
+		
+	elseif fartMode == "neco" then
+		-- much less randomness for necoarc noises
+		sounds[fartMode][0]:setPitch(math.random(98, 105) / 100)
+		-- *and* you still suffer
+		doFart()
+
+	end
+	sounds[fartMode][0]:play()
+
+end
+
+
+
 function checkFart()
 
 	if soundN > 0 then
@@ -73,26 +147,23 @@ function checkFart()
 			consecutiveFarts = 0
 			local tD	= packetT[soundN][2]
 			--sounds.bips[2]:stop()
-			sounds.bips[2]:setPitch(0.33 + tD * 5)
-			sounds.bips[2]:play()
+			if droning then
+				sounds.bips[2]:setPitch(0.33 + tD * 5)
+				sounds.bips[2]:play()
+			else
+				sounds.bips[2]:stop()
+			end
+
 			lastPing	= tD
 		else
 			lastPing	= false
 			sounds.bips[2]:stop()
 			consecutiveFarts = consecutiveFarts + 1
 			if consecutiveFarts == 3 then
-				sounds.farts[9]:stop()
-				sounds.farts[9]:setPitch(math.random(45, 100) / 100)
-				sounds.farts[9]:play()
+				doSuperFart()
 
 			elseif (consecutiveFarts < 3) or (consecutiveFarts > (3 + soundFD) and (consecutiveFarts % soundFD) == 0) then
-				local fart = math.random(1, 8)
-				while fart == lastFart do
-					fart = math.random(1, 8)
-				end
-				sounds.farts[fart]:stop()
-				sounds.farts[fart]:setPitch(math.random(60, 130) / 100)
-				sounds.farts[fart]:play()
+				doFart()
 			end
 
 		end
@@ -101,6 +172,8 @@ function checkFart()
 end
 
 function love.update(dt)
+	messageTime = messageTime - dt
+
 	doCheck()
 
 	while ((soundD + soundN) < packetN) do
@@ -179,6 +252,17 @@ function love.draw()
 	doGraph(0.100, 0.250, 0.0005)
 	gY	= gY + 1
 	doGraph(0.250, 2.001, 0.0125)
+
+	if messageTime > 0 then
+		love.graphics.setColor(0, 0, 0)
+		love.graphics.printf(message, -1, 200, 960, "center")
+		love.graphics.printf(message,  1, 200, 960, "center")
+		love.graphics.printf(message,  0, 201, 960, "center")
+		love.graphics.printf(message,  0, 199, 960, "center")
+
+		love.graphics.setColor(1, 1, 1)
+		love.graphics.printf(message, 0, 200, 960, "center")
+	end
 
 end
 
@@ -296,5 +380,31 @@ function doCheck()
 			end
 
 		end
+	end
+end
+
+
+
+function love.keypressed( key, scancode, isrepeat )
+	-- by default, just clear the message
+	message = ""
+	messageTime = 2
+
+	if key == "d" then
+		-- toggle droning noise
+		droning = not droning
+		message = "droning [".. (droning and "enabled" or "disabled") .."]"
+
+	elseif key == "1" then
+		fartMode = "farts"
+		message = "sound mode: [farts]"
+
+	elseif key == "2" then
+		fartMode = "neco"
+		message = "sound mode: [neco-arc]"
+
+	elseif key == "3" then
+		fartMode = nil
+		message = "sound mode: [muted]"
 	end
 end
